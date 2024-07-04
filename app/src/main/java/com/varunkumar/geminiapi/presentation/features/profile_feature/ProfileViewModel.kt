@@ -1,4 +1,4 @@
-package com.varunkumar.geminiapi.presentation.viewModels
+package com.varunkumar.geminiapi.presentation.features.profile_feature
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel

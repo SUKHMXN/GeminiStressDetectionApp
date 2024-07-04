@@ -1,22 +1,23 @@
 package com.varunkumar.geminiapi.presentation.features.chat_feature
 
 import android.content.Context
+import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.text.Spanned
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.ai.client.generativeai.Chat
-import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.content
 import com.varunkumar.geminiapi.model.ChatMessage
 import com.varunkumar.geminiapi.presentation.UiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.noties.markwon.Markwon
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -41,15 +42,15 @@ class ChatViewModel @Inject constructor(
         )
     )
 
+    val state = _state.asStateFlow()
+
     init {
         textToSpeech = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 val result = textToSpeech?.setLanguage(Locale.US)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                     Log.e("TTS", "The Language specified is not supported!")
-                } else {
-                    Log.d("TTS", "Initialization succeeded")
-                }
+                } else { Log.d("TTS", "Initialization succeeded") }
             } else {
                 Log.e("TTS", "Initialization failed")
             }
@@ -57,8 +58,8 @@ class ChatViewModel @Inject constructor(
     }
 
     fun speakOutText(message: ChatMessage) {
-        textToSpeech?.speak(message.data, TextToSpeech.QUEUE_FLUSH, null, null)
         _state.update { it.copy(speakText = message) }
+        textToSpeech?.speak(message.data, TextToSpeech.QUEUE_FLUSH, null, null)
     }
 
     fun onStopSpeak() {
@@ -73,8 +74,6 @@ class ChatViewModel @Inject constructor(
         textToSpeech?.stop()
         textToSpeech?.shutdown()
     }
-
-    val state = _state.asStateFlow()
 
     fun createSpannedText(input: String): Spanned {
         return markwon.toMarkdown(input)
@@ -99,12 +98,7 @@ class ChatViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val response = chat.sendMessage(
-                    message
-//                        content {
-//                            text(message)
-//                        }
-                    )
+                val response = chat.sendMessage(message)
 
                 response.text?.let { outputContent ->
                     val newMessage = ChatMessage(

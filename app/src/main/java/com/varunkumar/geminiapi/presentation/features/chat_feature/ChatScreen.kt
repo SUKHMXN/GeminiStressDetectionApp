@@ -1,5 +1,6 @@
 package com.varunkumar.geminiapi.presentation.features.chat_feature
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -41,7 +42,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.rememberLottieComposition
 import com.varunkumar.geminiapi.R
 import com.varunkumar.geminiapi.model.ChatMessage
 import com.varunkumar.geminiapi.presentation.UiState
@@ -70,7 +77,7 @@ fun ChatScreen(
     onBackButtonClick: () -> Unit
 ) {
     val listState = rememberLazyListState()
-    val state = viewModel.state.collectAsState(ChatState()).value
+    val state = viewModel.state.collectAsStateWithLifecycle(ChatState()).value
     val shape = RoundedCornerShape(20.dp)
     val focusRequester = remember { FocusRequester() }
     val fModifier = Modifier.fillMaxWidth()
@@ -176,6 +183,11 @@ fun ChatScreen(
                 .padding(it)
                 .padding(horizontal = 16.dp)
         ) {
+            SpeechAnimationBox(
+                modifier = fModifier,
+                isPlaying = state.speakText != null
+            )
+
             LazyColumn(
                 modifier = Modifier,
                 state = listState,
@@ -188,9 +200,9 @@ fun ChatScreen(
                         message = msg,
                         state = state,
                         onSpeakButtonClick = {
-                            if (state.speakText != msg)
-                                viewModel.speakOutText(msg)
-                            else viewModel.onStopSpeak()
+                            if (state.speakText != msg) {
+                                viewModel.speakOutText(message = msg)
+                            } else viewModel.onStopSpeak()
                         }
                     )
 
@@ -204,6 +216,31 @@ fun ChatScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun SpeechAnimationBox(
+    modifier: Modifier = Modifier,
+    isPlaying: Boolean
+) {
+    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.message_animation))
+
+    AnimatedVisibility(visible = !isPlaying) {
+        Box(
+            modifier = Modifier
+                .size(200.dp)
+                .clip(CircleShape)
+                .background(Color(0xffabc1ff))
+        )
+    }
+
+    AnimatedVisibility(visible = isPlaying) {
+        LottieAnimation(
+            modifier = modifier.size(400.dp),
+            composition = composition,
+            iterations = LottieConstants.IterateForever
+        )
     }
 }
 

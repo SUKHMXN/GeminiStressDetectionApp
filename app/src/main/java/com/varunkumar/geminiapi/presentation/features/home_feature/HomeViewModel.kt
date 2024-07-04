@@ -1,6 +1,6 @@
 package com.varunkumar.geminiapi.presentation.features.home_feature
 
-import android.net.Uri
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
@@ -45,9 +45,9 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun onChangeImageUri(newUri: Uri?) {
-        _state.update { it.copy(imageUri = newUri) }
-//        savedStateHandle["imageUri"] = newUri
+    fun onChangeImageUri(newBitmap: Bitmap?) {
+        _state.update { it.copy(image = newBitmap) }
+        savedStateHandle["image"] = newBitmap
     }
 
     fun predictStress() {

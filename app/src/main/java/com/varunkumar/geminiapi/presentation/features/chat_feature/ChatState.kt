@@ -6,8 +6,8 @@ import com.varunkumar.geminiapi.presentation.UiState
 data class ChatState(
     val message: String = "",
     val uiState: UiState = UiState.Initial,
-    val isSpeaking: Boolean = false,
     val speakText: ChatMessage? = null,
+    var isSpeaking: Boolean = false,
     val messages: List<ChatMessage> = listOf(
         ChatMessage(data = "Hello! How can i help you?", isBot = true)
     )

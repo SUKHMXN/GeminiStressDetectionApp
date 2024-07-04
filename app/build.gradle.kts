@@ -114,4 +114,16 @@ dependencies {
     //google firebase
     implementation("com.google.firebase:firebase-auth:23.0.0")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
+
+    //room library
+    val room_version = "2.6.1"
+    kapt("androidx.room:room-compiler:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+
+    //lottie animations
+    implementation("com.airbnb.android:lottie-compose:5.2.0")
+
+    //mlkit implemetation
+    implementation("com.google.mlkit:face-detection:16.1.5")
+    implementation("androidx.core:core-ktx:1.8.0")
 }

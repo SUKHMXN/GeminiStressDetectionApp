@@ -1,28 +1,43 @@
 package com.varunkumar.geminiapi.presentation.screens
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.launch
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,16 +50,29 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.varunkumar.geminiapi.presentation.HealthSensors
 import com.varunkumar.geminiapi.presentation.features.home_feature.HomeState
 import com.varunkumar.geminiapi.presentation.features.home_feature.HomeViewModel
@@ -59,22 +87,37 @@ fun SenseScreen(
     viewModel: HomeViewModel,
     onDoneButtonClick: () -> Unit
 ) {
-    val state by viewModel.state.collectAsState()
-    val context = LocalContext.current
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    var isShowingAlert by remember {
+        mutableStateOf(false)
+    }
+
+    if (isShowingAlert) {
+        Dialog(
+            onDismissRequest = { isShowingAlert = false }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.White)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(imageVector = Icons.Default.ErrorOutline, contentDescription = null)
+                Spacer(modifier = Modifier.height(5.dp))
+                Text(text = "No face Detected")
+            }
+        }
+    }
 
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         bitmap?.let {
-            val uri = saveImageToExternalStorage(context, it)
-            viewModel.onChangeImageUri(uri)
+            viewModel.onChangeImageUri(detectFaceFromBitmap(bitmap))
         }
-    }
-
-    val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        viewModel.onChangeImageUri(uri)
     }
 
     val shape = RoundedCornerShape(20.dp)
@@ -112,9 +155,12 @@ fun SenseScreen(
                     ),
                     onClick = {
 //                        if (state.imageUri != null) {
+                        if (state.image != null) {
                             viewModel.predictStress()
                             onDoneButtonClick()
-//                        }
+                        } else {
+                            isShowingAlert = true
+                        }
                     }
                 ) {
                     Text(
@@ -136,7 +182,7 @@ fun SenseScreen(
                 modifier = fModifier
                     .weight(0.6f)
                     .clip(shape)
-                    .background(if (state.imageUri == null) Color.LightGray else Color.Black)
+                    .background(if (state.image == null) Color.LightGray else Color.Black)
                     .clickable {
                         cameraLauncher.launch()
                     },
@@ -149,6 +195,70 @@ fun SenseScreen(
                 viewModel = viewModel,
                 state = state
             )
+        }
+//        it
+//        CameraCaptureScreen()
+    }
+}
+
+@Composable
+fun CameraCaptureScreen() {
+    val context = LocalContext.current
+    val lifeCycleOwner = LocalLifecycleOwner.current
+    var imageCapture: ImageCapture? by remember { mutableStateOf(null) }
+    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+    val launcher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                cameraProviderFuture.addListener({
+                    val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+                    val preview = Preview.Builder().build()
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                    imageCapture = ImageCapture.Builder().build()
+
+                    try {
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(
+                            lifeCycleOwner, cameraSelector, preview, imageCapture
+                        )
+                    } catch (exc: Exception) {
+                        Log.e("CameraX", "Use case binding failed", exc)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            }
+        }
+
+    val captureImage = {
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(createTempFile()).build()
+        imageCapture?.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e("CameraX", "Image capture failed", exception)
+                }
+
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    val bitmap = BitmapFactory.decodeFile(outputFileResults.savedUri?.path)
+                    // Use the bitmap
+                }
+            })
+    }
+
+    LaunchedEffect(Unit) {
+        launcher.launch(Manifest.permission.CAMERA)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(factory = { context ->
+            PreviewView(context).apply {
+
+            }
+        }, modifier = Modifier.fillMaxSize())
+        Button(onClick = { captureImage }) {
+            Text("Capture Image")
         }
     }
 }
@@ -164,10 +274,10 @@ private fun TopImageDetectionBox(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        if (state.imageUri != null) {
+        if (state.image != null) {
             AsyncImage(
                 modifier = fModifier,
-                model = state.imageUri,
+                model = state.image,
                 contentDescription = "Image"
             )
         } else {
@@ -260,6 +370,53 @@ private fun saveImageToExternalStorage(context: Context, bitmap: Bitmap): Uri? {
 
     return imageUri
 }
+
+private fun detectFaceFromBitmap(
+    bitmap: Bitmap
+): Bitmap? {
+    val inputImage = InputImage.fromBitmap(bitmap, 0)
+    val options = FaceDetectorOptions.Builder()
+        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
+        .build()
+    val detector = FaceDetection.getClient(options)
+    var outputBitmap: Bitmap? = null
+
+    detector.process(inputImage)
+        .addOnSuccessListener { faces ->
+            if (faces.isNotEmpty()) {
+                val face = faces[0]
+                val bounds = face.boundingBox
+                outputBitmap = cropAndResizeBitmap(bitmap, bounds, 200, 200)
+                Log.d("face", "$outputBitmap")
+            }
+        }
+        .addOnFailureListener { e ->
+            Log.e("error", "$outputBitmap")
+        }
+
+    Log.d("face", "$outputBitmap")
+    return outputBitmap
+}
+
+private fun cropAndResizeBitmap(bitmap: Bitmap, bounds: Rect, width: Int, height: Int): Bitmap {
+    val croppedBitmap = Bitmap.createBitmap(
+        bitmap,
+        bounds.left,
+        bounds.top,
+        bounds.width(),
+        bounds.height()
+    )
+
+    return Bitmap.createScaledBitmap(croppedBitmap, width, height, true)
+}
+
+//@OptIn(ExperimentalEncodingApi::class)
+//private fun bitmapToBase64(bitmap: Bitmap): String {
+//    val byteArrayOutputStream = ByteArrayOutputStream()
+//    bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
+//    val byteArray = byteArrayOutputStream.toByteArray()
+//    return Base64.encode(byteArray, Base64.Default)
+//}
 
 @Composable
 fun TimerBox(
