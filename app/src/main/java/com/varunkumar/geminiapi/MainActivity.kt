@@ -91,7 +91,7 @@ class MainActivity : ComponentActivity() {
                     ) {
                         NavHost(
                             navController = navController,
-                            startDestination = Routes.Login.route
+                            startDestination = Routes.Welcome.route
                         ) {
                             composable(Routes.Welcome.route) {
                                 SenseScreen(

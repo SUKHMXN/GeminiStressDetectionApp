@@ -8,5 +8,6 @@ data class HomeState(
     val stateResult: Result<String> = Result.Idle(),
     val selectedRoute: Routes = Routes.Home,
     val sensorValues: SensorValues = SensorValues(),
-    val image: Bitmap? = null
+    val image: Bitmap? = null,
+    val isFaceDetected: Boolean = false
 )
